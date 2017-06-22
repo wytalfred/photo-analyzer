@@ -1,13 +1,13 @@
 # photo-analyzer
 ### Summary
 
-A tool for photographers to analyze their photos. Right now it can mainly show you the  saturation and contrast of a photo. But new features will be added in the future.
+A tool for photographers to analyze their photos. Right now it can mainly show you the  saturation and contrast of a photo. New features will be added in the future.
 
 This program is tested on Windows and macOS. You can download the source file and compile it for your own. Or you can simply download the executable file and try it out.
 
 ### Usage
 
-Double click on the app, it'll open a terminal window. Drag and drop your photo onto it and hit Enter, you'll get some output pictures in the app folder. Just like this:
+Double click on the app, it'll open a terminal window. Drag and drop your photo onto it and hit Enter on your keyboard, you'll get some output pictures in the app folder. Just like this:
 
 ![image](https://github.com/wytalfred/photo-analyzer/blob/master/sample_output.png)
 
