@@ -164,7 +164,7 @@ int main(int argc, char const *argv[])
     // read in and resize image
     int width, height, n;
     uchar* inputImage = stbi_load(location.c_str(), &width, &height, &n, 3);
-    float ratio = max(width, height)/800.0;
+    float ratio = max(width, height)/801.0;
     int w = (int)(width/ratio);
     int h = (int)(height/ratio);
     uchar* img = (uchar*)malloc(w * h * n);
