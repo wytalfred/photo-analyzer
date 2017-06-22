@@ -9,7 +9,7 @@ This program is tested on Windows and macOS. You can download the source file an
 
 Double click on the app, it'll open a terminal window. Drag and drop your photo onto it and hit Enter, you'll get some output pictures in the app folder. Just like this:
 
-![image](https://github.com/wytalfred/photo-analyzer/blob/master/sample_ouput.png)
+![image](https://github.com/wytalfred/photo-analyzer/blob/master/sample_output.png)
 
 ### Build Guide
 
