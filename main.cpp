@@ -8,15 +8,26 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <string.h>
-
-#include "opencv2/imgproc/imgproc.hpp"
-#include "opencv2/highgui/highgui.hpp"
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb/stb_image.h"
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb/stb_image_write.h"
+#define STB_IMAGE_RESIZE_IMPLEMENTATION
+#define STB_IMAGE_RESIZE_STATIC
+#include "stb/stb_image_resize.h"
 
 using namespace std;
-using namespace cv;
+typedef unsigned char uchar;
 
 
-void RGB2HSL(uchar R, uchar G, uchar B, float& H, float& S, float& L)
+
+// if you are using Windows, make sure to commit the next line!
+#define MACOS_X
+
+
+
+
+inline void RGB2HSL(uchar R, uchar G, uchar B, float& H, float& S, float& L)
 {
     float r, g, b, cmax, cmin, delta;
     r = R / 255.0;
@@ -52,137 +63,91 @@ void RGB2HSL(uchar R, uchar G, uchar B, float& H, float& S, float& L)
     }
 }
 
-// Not in use. OpenCV has offered a better one.
-Mat fastfloatIntegral(Mat& img)
+void integral(unsigned char* in, unsigned long* out, int w, int h)
 {
-    Mat out = Mat::zeros(img.size(), CV_32FC1);
-    vector<float> colsum(img.cols, 0);
-
-    out.at<float>(0,0) = img.at<float>(0,0);
-    colsum[0] = img.at<float>(0,0);
-    for(int j=1;j<img.cols;j++)
+    unsigned long *colsum = new unsigned long[w]; // sum of each column
+    // calculate integral of the first line
+    for(int i=0;i<w;i++)
     {
-        out.at<float>(0,j) = out.at<float>(0,j-1) + img.at<float>(0,j);
-        colsum[j] = img.at<float>(0,j);
+        colsum[i]=in[i];
+        out[i] = in[i];
+        if(i>0) out[i] += out[i-1];
     }
-
-    for(int i=1;i<img.rows;i++)
+    for (int i=1;i<h;i++)
     {
-        out.at<float>(i,0) = out.at<float>(i-1,0) + img.at<float>(i,0);
-        float* data = out.ptr<float>(i);
-        for(int j=1;j<img.cols;j++)
+        int offset = i*w;
+        // first column of each line
+        colsum[0] +=in[offset];
+        out[offset] = colsum[0];
+         // other columns
+        for(int j=1;j<w;j++)
         {
-            colsum[j] += img.at<float>(i,j);
-            data[j] = data[j-1] + colsum[j];
+            colsum[j] += in[offset+j];
+            out[offset+j] = out[offset+j-1] + colsum[j];
         }
     }
-    return out;
 }
 
 // A pixel's local contrast is measured by the fabs() of the pixel's value and the average of pixel values around it.
-Mat getLocalContrast(Mat& img, Mat& sum, int w)
+void getLocalContrast(unsigned char* img, unsigned long* sum, unsigned char* out, int w, int h, int s)
 {
-    Mat localContrast = Mat::zeros(img.size(), CV_32FC1);
-    for(int i=0;i<img.rows;i++)
+    for(int i=0;i<h;i++)
     {
-        float* lc = localContrast.ptr<float>(i);
-        float* ll = img.ptr<float>(i);
-        for(int j=0;j<img.cols;j++)
+        for(int j=0;j<w;j++)
         {
-            int x = min(max(j-w/2,0),img.cols-w-1);
-            int y = min(max(i-w/2,0),img.rows-w-1);
-            Mat patch = img(Rect(x, y, w, w));
-            double avg = (sum.at<float>(y+w,x+w) - sum.at<float>(y,x+w) - sum.at<float>(y+w,x) + sum.at<float>(y,x)) / (w*w);
-            lc[j] = fabs(ll[j]-avg)/(avg>0.5?avg:(1-avg));
+            int x = min(max(j-s/2-1,-1),w-s-1);
+            int y = min(max(i-s/2-1,-1),h-s-1);
+            long avg;
+            if(y == -1 && x != -1)
+                avg = (sum[(y+s)*w+(x+s)] - sum[(y+s)*w+x]) / (s*s);
+            else if(x == -1 && y != -1)
+                avg = (sum[(y+s)*w+(x+s)] - sum[y*w+(x+s)]) / (s*s);
+            else if(x == -1 && y == -1)
+                avg = sum[(y+s)*w+(x+s)] / (s*s);
+            else
+                avg = (sum[(y+s)*w+(x+s)] - sum[y*w+(x+s)] - sum[(y+s)*w+x] + sum[y*w+x]) / (s*s);
+            out[i*w+j] = abs(img[i*w+j]-avg)*255/(avg>128?avg:(255-avg));
         }
     }
-    return localContrast;
 }
 
-void caculate(Mat& img)
-{
-    Mat R = Mat::zeros(img.size(), CV_32FC1);
-    Mat G = Mat::zeros(img.size(), CV_32FC1);
-    Mat B = Mat::zeros(img.size(), CV_32FC1);
-    Mat H = Mat::zeros(img.size(), CV_32FC1);
-    Mat S = Mat::zeros(img.size(), CV_32FC1);
-    Mat L = Mat::zeros(img.size(), CV_32FC1);
-    Mat RContrast = Mat::zeros(img.size(), CV_32FC1);
-    Mat GContrast = Mat::zeros(img.size(), CV_32FC1);
-    Mat BContrast = Mat::zeros(img.size(), CV_32FC1);
-    Mat lightnessContrast = Mat::zeros(img.size(), CV_32FC1);
-    Mat colorContrast = Mat::zeros(img.size(), CV_32FC1);
-    Mat mv[3];
-    split(img, mv); // get RGB channels
 
-
-    for(int i=0;i<img.cols;i++)
+// Don't know what for, but must have it.
+class stbir_context {
+public:
+    stbir_context()
     {
-        for(int j=0;j<img.rows;j++)
-        {
-            uchar r0 = mv[0].at<uchar>(j,i);
-            uchar g0 = mv[1].at<uchar>(j,i);
-            uchar b0 = mv[2].at<uchar>(j,i);
-            float h0,s0,l0;
-            RGB2HSL(r0, g0, b0, h0, s0, l0);
-            H.at<float>(j,i) = h0;
-            L.at<float>(j,i) = l0;
-            S.at<float>(j,i) = s0;
-            R.at<float>(j,i) = r0/255.0;
-            G.at<float>(j,i) = g0/255.0;
-            B.at<float>(j,i) = b0/255.0;
-        }
+        size = 1000000;
+        memory = malloc(size);
     }
 
-
-    Mat Lsum, Rsum, Gsum, Bsum;
-    integral(L, Lsum, CV_32F);
-    integral(R, Rsum, CV_32F);
-    integral(G, Gsum, CV_32F);
-    integral(B, Bsum, CV_32F);
-
-    // Get local contrast in different scales(aka template size). Then add them up.
-    int ratio = min(img.cols, img.rows)/10-1;
-    for(int i=1;i<=5;i++)
+    ~stbir_context()
     {
-        lightnessContrast += getLocalContrast(L, Lsum, i*ratio) / 5;
-        RContrast += getLocalContrast(R, Rsum, i*ratio) / 5;
-        GContrast += getLocalContrast(G, Gsum, i*ratio) / 5;
-        BContrast += getLocalContrast(B, Bsum, i*ratio) / 5;
+        free(memory);
     }
 
-
-    for(int i=0;i<img.cols;i++)
-    {
-        for(int j=0;j<img.rows;j++)
-        {
-            colorContrast.at<float>(j,i) = fmax(fmax(RContrast.at<float>(j,i), GContrast.at<float>(j,i)), BContrast.at<float>(j,i));
-        }
-    }
-
-
-    imshow("Original", img);
-    H *= 255.0/360; H.convertTo(H, CV_8UC1); imshow("Hue",H);
-    S *= 255; S.convertTo(S, CV_8UC1); imshow("Lightness",L);
-    L *= 255; L.convertTo(L, CV_8UC1); imshow("Saturation",S);
-    // R *= 255; R.convertTo(R, CV_8UC1); imshow("R",R);
-    // G *= 255; G.convertTo(G, CV_8UC1); imshow("G",G);
-    // B *= 255; B.convertTo(B, CV_8UC1); imshow("B",B);
-    lightnessContrast *= 255; lightnessContrast.convertTo(lightnessContrast, CV_8UC1); imshow("lightnessContrast",lightnessContrast);
-    RContrast *= 255; RContrast.convertTo(RContrast, CV_8UC1); imshow("RContrast",RContrast);
-    GContrast *= 255; GContrast.convertTo(GContrast, CV_8UC1); imshow("GContrast",GContrast);
-    BContrast *= 255; BContrast.convertTo(BContrast, CV_8UC1); imshow("BContrast",BContrast);
-    colorContrast *= 255; colorContrast.convertTo(colorContrast, CV_8UC1); imshow("colorContrast",colorContrast);
-}
+    size_t size;
+    void* memory;
+} g_context;
 
 
 int main(int argc, char const *argv[])
 {
+#ifdef MACOS_X
+    string apppath = argv[0];
+    while(apppath[apppath.size()-1] != '/')
+        apppath.pop_back();
+    apppath.pop_back();
+#else
+    string apppath = ".";
+#endif
+
     string location;
     if(argc == 1)
     {
         cout << "Input picture location, or drag the image here." << endl;
         getline(cin, location);
+#ifdef MACOS_X
         location[location.length()-1] = 0;
         while(1) // delete '\'
         {
@@ -190,22 +155,98 @@ int main(int argc, char const *argv[])
             if(pos == -1) break;
             location.erase(pos, 1);
         }
+#endif
     }
     else if(argc == 2)
         location = argv[1];
-    // cout << location << endl;
 
 
-    Mat img = imread(location);
-    double ratio = (double)img.rows/img.cols; // longer edge => 800px
-    if(img.cols > img.rows)
-        resize(img, img, Size(800,800*ratio));
-    else
-        resize(img, img, Size(800/ratio,800));
+    // read in and resize image
+    int width, height, n;
+    uchar* inputImage = stbi_load(location.c_str(), &width, &height, &n, 3);
+    float ratio = max(width, height)/800.0;
+    int w = (int)(width/ratio);
+    int h = (int)(height/ratio);
+    uchar* img = (uchar*)malloc(w * h * n);
+    stbir_resize(inputImage, width, height, 0, img, w, h, 0, STBIR_TYPE_UINT8, n, STBIR_ALPHA_CHANNEL_NONE, 0, STBIR_EDGE_CLAMP, STBIR_EDGE_CLAMP, STBIR_FILTER_BOX, STBIR_FILTER_BOX, STBIR_COLORSPACE_SRGB, &g_context);
 
-    caculate(img);
+    // get R, G, B, H, S, L channels
+    uchar* H = new uchar[w*h*1];
+    uchar* S = new uchar[w*h*1];
+    uchar* L = new uchar[w*h*1];
+    uchar* R = new uchar[w*h*1];
+    uchar* G = new uchar[w*h*1];
+    uchar* B = new uchar[w*h*1];
+    for(int i=0;i<h;i++)
+    {
+        for(int j=0;j<w;j++)
+        {
+            uchar r, g, b;
+            r = img[(i*w+j)*n];
+            g = img[(i*w+j)*n+1];
+            b = img[(i*w+j)*n+2];
+            float h, s, l;
+            RGB2HSL(r, g, b, h, s, l);
+            H[i*w+j] = (uchar)(h*255/360);
+            S[i*w+j] = (uchar)(s*255);
+            L[i*w+j] = (uchar)(l*255);
+            R[i*w+j] = r;
+            G[i*w+j] = g;
+            B[i*w+j] = b;
+        }
+    }
 
-    waitKey(0);
+
+    unsigned long* Lsum = new unsigned long[w*h*1];
+    unsigned long* Rsum = new unsigned long[w*h*1];
+    unsigned long* Gsum = new unsigned long[w*h*1];
+    unsigned long* Bsum = new unsigned long[w*h*1];
+    uchar* Lcontrast1 = new uchar[w*h*1];
+    uchar* Lcontrast2 = new uchar[w*h*1];
+    uchar* Lcontrast3 = new uchar[w*h*1];
+    uchar* Lcontrast4 = new uchar[w*h*1];
+    uchar* Lcontrast5 = new uchar[w*h*1];
+    uchar* Lcontrast = new uchar[w*h*1];
+    uchar* Rcontrast = new uchar[w*h*1];
+    uchar* Gcontrast = new uchar[w*h*1];
+    uchar* Bcontrast = new uchar[w*h*1];
+    uchar* ColorContrast = new uchar[w*h*1];
+
+    integral(L, Lsum, w, h);
+    integral(R, Rsum, w, h);
+    integral(G, Gsum, w, h);
+    integral(B, Bsum, w, h);
+
+    // getLocalContrast(L, Lsum, Lcontrast1, w, h, min(w,h)/32);
+    // getLocalContrast(L, Lsum, Lcontrast2, w, h, min(w,h)/16);
+    // getLocalContrast(L, Lsum, Lcontrast3, w, h, min(w,h)/8);
+    // getLocalContrast(L, Lsum, Lcontrast4, w, h, min(w,h)/4);
+    // getLocalContrast(L, Lsum, Lcontrast5, w, h, min(w,h)/2);
+    // for(int i=0;i<h;i++)
+    //     for(int j=0;j<w;j++)
+    //         Lcontrast[i*w+j] = (Lcontrast1[i*w+j] + Lcontrast2[i*w+j] + Lcontrast3[i*w+j] + Lcontrast4[i*w+j] + Lcontrast5[i*w+j]) / 5;
+
+    getLocalContrast(L, Lsum, Lcontrast, w, h, min(w,h)/4);
+    getLocalContrast(R, Rsum, Rcontrast, w, h, min(w,h)/4);
+    getLocalContrast(G, Gsum, Gcontrast, w, h, min(w,h)/4);
+    getLocalContrast(B, Bsum, Bcontrast, w, h, min(w,h)/4);
+    for(int i=0;i<h;i++)
+        for(int j=0;j<w;j++)
+            ColorContrast[i*w+j] = max(max(Rcontrast[i*w+j], Gcontrast[i*w+j]), Bcontrast[i*w+j]);
+
+
+
+    stbi_write_png((apppath+"/03-Hue.png").c_str(), w, h, 1, H, 0);
+    stbi_write_png((apppath+"/02-Saturation.png").c_str(), w, h, 1, S, 0);
+    stbi_write_png((apppath+"/01-Lightness.png").c_str(), w, h, 1, L, 0);
+    stbi_write_png((apppath+"/08-LightnessContrast.png").c_str(), w, h, 1, Lcontrast, 0);
+    stbi_write_png((apppath+"/04-RContrast.png").c_str(), w, h, 1, Rcontrast, 0);
+    stbi_write_png((apppath+"/05-GContrast.png").c_str(), w, h, 1, Gcontrast, 0);
+    stbi_write_png((apppath+"/06-BContrast.png").c_str(), w, h, 1, Bcontrast, 0);
+    stbi_write_png((apppath+"/07-ColorContrast.png").c_str(), w, h, 1, ColorContrast, 0);
+
+
+    stbi_image_free(img);
 	return 0;
 }
 
