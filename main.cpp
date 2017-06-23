@@ -191,7 +191,7 @@ us = getTime();
 #endif
 cout << "resizing..." << endl;
 
-    float ratio = max(width, height)/1600.0;
+    float ratio = max(width, height)/800.0;
     int w = (int)(width/ratio);
     int h = (int)(height/ratio);
     uchar* img = (uchar*)malloc(w * h * n);
@@ -204,6 +204,7 @@ us = getTime();
 cout << "Calculating channels..." << endl;
 
     // get R, G, B, H, S, L channels
+    uchar* Hq = new uchar[w*h*1];
     uchar* H = new uchar[w*h*1];
     uchar* S = new uchar[w*h*1];
     uchar* L = new uchar[w*h*1];
@@ -220,6 +221,7 @@ cout << "Calculating channels..." << endl;
             b = img[(i*w+j)*n+2];
             float h, s, l;
             RGB2HSL(r, g, b, h, s, l);
+            Hq[i*w+j] = (uchar)((30-abs((int)h%60-30))*8+15);
             H[i*w+j] = (uchar)(h*255/360);
             S[i*w+j] = (uchar)(s*255);
             L[i*w+j] = (uchar)(l*255);
@@ -283,21 +285,22 @@ us = getTime();
 #endif
 cout << "Output..." << endl;
 
-    stbi_write_bmp((apppath+"/03-Hue.png").c_str(), w, h, 1, H);
-    stbi_write_bmp((apppath+"/02-Saturation.png").c_str(), w, h, 1, S);
     stbi_write_bmp((apppath+"/01-Lightness.png").c_str(), w, h, 1, L);
-    stbi_write_bmp((apppath+"/08-LightnessContrast.png").c_str(), w, h, 1, Lcontrast);
+    stbi_write_bmp((apppath+"/02-Saturation.png").c_str(), w, h, 1, S);
+    stbi_write_bmp((apppath+"/03-Hue.png").c_str(), w, h, 1, H);
     stbi_write_bmp((apppath+"/04-RContrast.png").c_str(), w, h, 1, Rcontrast);
     stbi_write_bmp((apppath+"/05-GContrast.png").c_str(), w, h, 1, Gcontrast);
     stbi_write_bmp((apppath+"/06-BContrast.png").c_str(), w, h, 1, Bcontrast);
     stbi_write_bmp((apppath+"/07-ColorContrast.png").c_str(), w, h, 1, ColorContrast);
+    stbi_write_bmp((apppath+"/08-LightnessContrast.png").c_str(), w, h, 1, Lcontrast);
+    stbi_write_bmp((apppath+"/09-HueQuality.png").c_str(), w, h, 1, Hq);
 
 #ifdef DEBUG
 cout << getTime() - us << endl;
 #endif
 cout << "Done!" << endl;
 
-    usleep(500000);
+    usleep(100000);
     stbi_image_free(img);
 	return 0;
 }
