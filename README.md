@@ -11,11 +11,20 @@ Double click on the app, it'll open a terminal window. Drag and drop your photo 
 
 ![image](https://github.com/wytalfred/photo-analyzer/blob/master/sample_output.png)
 
+On Linux type the following command
+`./PhotoAnalyzer xxx.jpg`
+
 ### Build Guide
 
 Building this program is super easy:
 
-`g++ main.cpp -o PhotoAnalyzer`
+`g++ -std=c++11 -DMACOS_X -I./stb main.cpp -o PhotoAnalyzer`
+
+For Linux
+`g++ -std=c++11 -DLINUX -I./stb main.cpp -o PhotoAnalyzer`
+
+Or just type 
+`make`
 
 That's it. Thanks to the open-source library stb. You can find more info of it [here](https://github.com/nothings/stb).
 

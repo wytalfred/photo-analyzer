@@ -22,8 +22,8 @@ typedef unsigned char uchar;
 
 
 
-// if you are using Windows, make sure to commit the next line!
-#define MACOS_X
+// if you are using Windows or linux, make sure to commit the next line!
+//#define MACOS_X
 
 // #define DEBUG
 
@@ -148,7 +148,7 @@ int main(int argc, char const *argv[])
 #ifdef DEBUG
 long us = getTime();
 #endif
-#ifdef MACOS_X
+#if defined ( MACOS_X)||(LINUX)
     string apppath = argv[0];
     while(apppath[apppath.size()-1] != '/')
         apppath.pop_back();
@@ -162,7 +162,7 @@ long us = getTime();
     {
         cout << "Drag the image here." << endl;
         getline(cin, location);
-#ifdef MACOS_X
+#if defined ( MACOS_X)||(LINUX)
         location[location.length()-1] = 0;
         while(1) // delete '\'
         {
