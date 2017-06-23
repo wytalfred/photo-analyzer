@@ -8,6 +8,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <string.h>
+#include <sys/time.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb/stb_image.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -24,8 +25,18 @@ typedef unsigned char uchar;
 // if you are using Windows, make sure to commit the next line!
 #define MACOS_X
 
+// #define DEBUG
 
 
+
+
+struct timeval time_val;
+struct timezone tz;
+inline long getTime()
+{
+    gettimeofday(&time_val, &tz);
+    return (time_val.tv_sec%1000)*1000000 + time_val.tv_usec;
+}
 
 inline void RGB2HSL(uchar R, uchar G, uchar B, float& H, float& S, float& L)
 {
@@ -91,6 +102,7 @@ void integral(unsigned char* in, unsigned long* out, int w, int h)
 // A pixel's local contrast is measured by the fabs() of the pixel's value and the average of pixel values around it.
 void getLocalContrast(unsigned char* img, unsigned long* sum, unsigned char* out, int w, int h, int s)
 {
+    long ss = s*s;
     for(int i=0;i<h;i++)
     {
         for(int j=0;j<w;j++)
@@ -99,13 +111,13 @@ void getLocalContrast(unsigned char* img, unsigned long* sum, unsigned char* out
             int y = min(max(i-s/2-1,-1),h-s-1);
             long avg;
             if(y == -1 && x != -1)
-                avg = (sum[(y+s)*w+(x+s)] - sum[(y+s)*w+x]) / (s*s);
+                avg = (sum[(y+s)*w+(x+s)] - sum[(y+s)*w+x]) / ss;
             else if(x == -1 && y != -1)
-                avg = (sum[(y+s)*w+(x+s)] - sum[y*w+(x+s)]) / (s*s);
+                avg = (sum[(y+s)*w+(x+s)] - sum[y*w+(x+s)]) / ss;
             else if(x == -1 && y == -1)
-                avg = sum[(y+s)*w+(x+s)] / (s*s);
+                avg = sum[(y+s)*w+(x+s)] / ss;
             else
-                avg = (sum[(y+s)*w+(x+s)] - sum[y*w+(x+s)] - sum[(y+s)*w+x] + sum[y*w+x]) / (s*s);
+                avg = (sum[(y+s)*w+(x+s)] - sum[y*w+(x+s)] - sum[(y+s)*w+x] + sum[y*w+x]) / ss;
             out[i*w+j] = abs(img[i*w+j]-avg)*255/(avg>128?avg:(255-avg));
         }
     }
@@ -133,6 +145,9 @@ public:
 
 int main(int argc, char const *argv[])
 {
+#ifdef DEBUG
+long us = getTime();
+#endif
 #ifdef MACOS_X
     string apppath = argv[0];
     while(apppath[apppath.size()-1] != '/')
@@ -145,7 +160,7 @@ int main(int argc, char const *argv[])
     string location;
     if(argc == 1)
     {
-        cout << "Input picture location, or drag the image here." << endl;
+        cout << "Drag the image here." << endl;
         getline(cin, location);
 #ifdef MACOS_X
         location[location.length()-1] = 0;
@@ -160,15 +175,33 @@ int main(int argc, char const *argv[])
     else if(argc == 2)
         location = argv[1];
 
+#ifdef DEBUG
+cout << getTime() - us << endl;
+us = getTime();
+#endif
+cout << "Loading image..." << endl;
 
     // read in and resize image
     int width, height, n;
     uchar* inputImage = stbi_load(location.c_str(), &width, &height, &n, 3);
-    float ratio = max(width, height)/801.0;
+
+#ifdef DEBUG
+cout << getTime() - us << endl;
+us = getTime();
+#endif
+cout << "resizing..." << endl;
+
+    float ratio = max(width, height)/1600.0;
     int w = (int)(width/ratio);
     int h = (int)(height/ratio);
     uchar* img = (uchar*)malloc(w * h * n);
     stbir_resize(inputImage, width, height, 0, img, w, h, 0, STBIR_TYPE_UINT8, n, STBIR_ALPHA_CHANNEL_NONE, 0, STBIR_EDGE_CLAMP, STBIR_EDGE_CLAMP, STBIR_FILTER_BOX, STBIR_FILTER_BOX, STBIR_COLORSPACE_SRGB, &g_context);
+
+#ifdef DEBUG
+cout << getTime() - us << endl;
+us = getTime();
+#endif
+cout << "Calculating channels..." << endl;
 
     // get R, G, B, H, S, L channels
     uchar* H = new uchar[w*h*1];
@@ -196,6 +229,11 @@ int main(int argc, char const *argv[])
         }
     }
 
+#ifdef DEBUG
+cout << getTime() - us << endl;
+us = getTime();
+#endif
+cout << "Integral..." << endl;
 
     unsigned long* Lsum = new unsigned long[w*h*1];
     unsigned long* Rsum = new unsigned long[w*h*1];
@@ -217,6 +255,11 @@ int main(int argc, char const *argv[])
     integral(G, Gsum, w, h);
     integral(B, Bsum, w, h);
 
+#ifdef DEBUG
+cout << getTime() - us << endl;
+us = getTime();
+#endif
+cout << "Calculating contrast..." << endl;
     // getLocalContrast(L, Lsum, Lcontrast1, w, h, min(w,h)/32);
     // getLocalContrast(L, Lsum, Lcontrast2, w, h, min(w,h)/16);
     // getLocalContrast(L, Lsum, Lcontrast3, w, h, min(w,h)/8);
@@ -234,18 +277,27 @@ int main(int argc, char const *argv[])
         for(int j=0;j<w;j++)
             ColorContrast[i*w+j] = max(max(Rcontrast[i*w+j], Gcontrast[i*w+j]), Bcontrast[i*w+j]);
 
+#ifdef DEBUG
+cout << getTime() - us << endl;
+us = getTime();
+#endif
+cout << "Output..." << endl;
 
+    stbi_write_bmp((apppath+"/03-Hue.png").c_str(), w, h, 1, H);
+    stbi_write_bmp((apppath+"/02-Saturation.png").c_str(), w, h, 1, S);
+    stbi_write_bmp((apppath+"/01-Lightness.png").c_str(), w, h, 1, L);
+    stbi_write_bmp((apppath+"/08-LightnessContrast.png").c_str(), w, h, 1, Lcontrast);
+    stbi_write_bmp((apppath+"/04-RContrast.png").c_str(), w, h, 1, Rcontrast);
+    stbi_write_bmp((apppath+"/05-GContrast.png").c_str(), w, h, 1, Gcontrast);
+    stbi_write_bmp((apppath+"/06-BContrast.png").c_str(), w, h, 1, Bcontrast);
+    stbi_write_bmp((apppath+"/07-ColorContrast.png").c_str(), w, h, 1, ColorContrast);
 
-    stbi_write_png((apppath+"/03-Hue.png").c_str(), w, h, 1, H, 0);
-    stbi_write_png((apppath+"/02-Saturation.png").c_str(), w, h, 1, S, 0);
-    stbi_write_png((apppath+"/01-Lightness.png").c_str(), w, h, 1, L, 0);
-    stbi_write_png((apppath+"/08-LightnessContrast.png").c_str(), w, h, 1, Lcontrast, 0);
-    stbi_write_png((apppath+"/04-RContrast.png").c_str(), w, h, 1, Rcontrast, 0);
-    stbi_write_png((apppath+"/05-GContrast.png").c_str(), w, h, 1, Gcontrast, 0);
-    stbi_write_png((apppath+"/06-BContrast.png").c_str(), w, h, 1, Bcontrast, 0);
-    stbi_write_png((apppath+"/07-ColorContrast.png").c_str(), w, h, 1, ColorContrast, 0);
+#ifdef DEBUG
+cout << getTime() - us << endl;
+#endif
+cout << "Done!" << endl;
 
-
+    usleep(500000);
     stbi_image_free(img);
 	return 0;
 }
