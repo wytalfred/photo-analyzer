@@ -23,7 +23,7 @@ typedef unsigned char uchar;
 
 
 // if you are using Windows or linux, make sure to commit the next line!
-//#define MACOS_X
+#define MACOS_X
 
 // #define DEBUG
 
@@ -72,6 +72,40 @@ inline void RGB2HSL(uchar R, uchar G, uchar B, float& H, float& S, float& L)
         else
             H = int( 60 * (r - g) / delta + 240 + 0.5);
     }
+}
+
+static float hueToRgb(float p, float q, float t) {
+    if (t < 0.0 )
+        t += 1.0 ;
+    if (t > 1.0 )
+        t -= 1.0;
+    if (t < 1.0 / 6.0 )
+        return p + (q - p) * 6.0 * t;
+    if (t < 1.0 / 2.0 )
+        return q;
+    if (t < 2.0 /3.0 )
+        return p + (q - p) * (2.0/3.0 - t) * 6.0;
+    return p;
+}
+
+void HSL2RGB(float H, float S, float L, uchar *R, uchar *G, uchar *B)
+{
+    float r1, g1, b1;
+    float h = H / 360.0;
+
+    if ( S == 0 ) {
+        r1 = g1 = b1 = L; // gray
+    } else {
+        float q = L < 0.5 ? L * (1 + S) : L + S - L * S;
+        float p = 2 * L - q;
+        r1 = hueToRgb(p, q, h + 1.0 / 3.0);
+        g1 = hueToRgb(p, q, h);
+        b1 = hueToRgb(p, q, h - 1.0 / 3.0);
+    }
+
+    *R = int(r1 * 255);
+    *G = int(g1 * 255);
+    *B = int(b1 * 255);
 }
 
 void integral(unsigned char* in, unsigned long* out, int w, int h)
@@ -211,6 +245,7 @@ cout << "Calculating channels..." << endl;
     uchar* R = new uchar[w*h*1];
     uchar* G = new uchar[w*h*1];
     uchar* B = new uchar[w*h*1];
+    uchar* Color = new uchar[w*h*3];
     for(int i=0;i<h;i++)
     {
         for(int j=0;j<w;j++)
@@ -228,6 +263,17 @@ cout << "Calculating channels..." << endl;
             R[i*w+j] = r;
             G[i*w+j] = g;
             B[i*w+j] = b;
+
+            uchar r1, g1, b1;
+            float s0;
+            float th = 0.5; // max 0.5
+            if(l>th && l<=1-th) s0 = s;
+            else if(l<=th) s0 = s*l/th;
+            else s0 = s*(1-l)/th;
+            HSL2RGB(h, s0, 0.5, &r1, &g1, &b1);
+            Color[(i*w+j)*3+0] = r1;
+            Color[(i*w+j)*3+1] = g1;
+            Color[(i*w+j)*3+2] = b1;
         }
     }
 
@@ -285,6 +331,7 @@ us = getTime();
 #endif
 cout << "Output..." << endl;
 
+    stbi_write_bmp((apppath+"/00-OriginalImage.png").c_str(), w, h, 3, img);
     stbi_write_bmp((apppath+"/01-Lightness.png").c_str(), w, h, 1, L);
     stbi_write_bmp((apppath+"/02-Saturation.png").c_str(), w, h, 1, S);
     stbi_write_bmp((apppath+"/03-Hue.png").c_str(), w, h, 1, H);
@@ -294,6 +341,7 @@ cout << "Output..." << endl;
     stbi_write_bmp((apppath+"/07-ColorContrast.png").c_str(), w, h, 1, ColorContrast);
     stbi_write_bmp((apppath+"/08-LightnessContrast.png").c_str(), w, h, 1, Lcontrast);
     stbi_write_bmp((apppath+"/09-HueQuality.png").c_str(), w, h, 1, Hq);
+    stbi_write_bmp((apppath+"/10-Color.png").c_str(), w, h, 3, Color);
 
 #ifdef DEBUG
 cout << getTime() - us << endl;
